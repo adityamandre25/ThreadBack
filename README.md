@@ -1,360 +1,270 @@
-# THREADBACK
+ThreadBack
+Stay focused on the mission. Explore anything. Bring back only what
+matters.
+ThreadBack is an AI-powered workspace designed to help people make
+progress on complex tasks without losing the context that matters. It
+separates a primary Mission from focused side conversations called
+SideQuests. Users can explore ideas, ask questions, compare
+approaches, or discuss tangential topics without flooding the main
+conversation with every message.
+Instead of merging entire conversations, ThreadBack extracts useful
+context---such as decisions, rationale, learnings, blockers, and next
+steps---and makes that information available to the Main AI.
+The problem
+Long AI conversations often drift. While working toward a goal, a user
+may need to investigate an unfamiliar concept, compare technologies,
+brainstorm an alternative, or briefly discuss something unrelated.
+Keeping all of that in one conversation can bury important decisions and
+make it harder for the AI to stay focused.
+ThreadBack treats conversation history and mission context as
+different things:
+- Conversation history preserves what was said.
+- Mission context preserves what matters for completing the goal.
+- Side conversations can remain separate while their relevant
+  conclusions flow back to the mission.
+Two core use cases
+1. Personal AI agents working toward a shared outcome
+Each participant can work with a personal AI agent that understands
+their own perspective, preferences, and reasoning. These agents can
+explore options independently and develop recommendations. Only
+relevant, shareable decisions and supporting context need to flow to the
+Main AI, which combines contributions and helps the group reach a
+coherent outcome.
+Example: A team is planning a product. One person's agent recommends
+React based on the team's experience; another recommends Next.js for the
+product's rendering needs; a third flags the implementation deadline.
+The Main AI compares the proposals against the shared requirements,
+surfaces trade-offs, records the decisions, and identifies unresolved
+disagreements.
+Design principle: The Main AI should not blindly concatenate
+everyone's conversations. It should preserve who proposed what, why they
+proposed it, whether it was accepted, and what remains unresolved.
+Private personal context should not be shared automatically.
+This is a core product direction. The current repository documents
+Main AI and SideQuest conversations for a mission; a complete
+multi-user personal-agent coordination workflow may require additional
+implementation.
 
-ThreadBack is an AI-powered mission workspace that helps users complete complex engineering objectives without losing focus by offering dedicated exploratory **SideQuests** alongside their primary mission.
-
----
-
-## Repository Structure
-
-```
+2. Mission-focused work with isolated exploration
+A user creates a mission such as "Build a CRUD API." The Main AI
+helps plan and execute the objective. During the work, the user can open
+SideQuests to investigate a topic, compare approaches, or explore a
+branch of work.
+Example workflow:
+1. Create a mission: "Build a CRUD API with authentication."
+2. Work with the Main AI: Define requirements, architecture, and
+   milestones.
+3. Explore in a SideQuest: Ask how JWT middleware works, compare
+   libraries, or investigate an implementation detail.
+4. Return to the mission: Generate a concise summary containing the
+   useful findings, decisions, examples, and unresolved questions.
+5. Continue with relevant context: The Main AI receives the summary
+   without importing the SideQuest's raw transcript into its own
+   message history.
+The same principle applies when a user discusses something unrelated in
+a separate conversation: it should not become mission context unless it
+is deliberately judged relevant.
+Core principles
+- Mission-first: Keep the primary objective, progress, blockers,
+  and next steps easy to recover.
+- Focused exploration: Investigate subtopics in separate
+  conversations without derailing the main thread.
+- Selective context transfer: Transfer decisions and useful
+  findings, not every message.
+- History isolation: Preserve each conversation's transcript
+  independently.
+- Traceable decisions: Keep the rationale and status of decisions
+  so the Main AI can distinguish proposals from accepted choices.
+- Bounded context: Inject a limited amount of relevant information
+  into prompts to reduce repetition and context bloat.
+- Privacy by design: In a multi-person workflow, share only
+  information that is appropriate and authorized to share.
+How it works today
+The current application uses a React frontend and an Express/TypeScript
+backend. Missions, conversations, messages, and structured memory are
+persisted in SQLite. The backend calls Google's GenAI SDK for model
+inference.
+At a high level:
+Mission
+  |
+  +-- Main conversation
+  |     +-- Mission objective
+  |     +-- Progress, decisions, blockers, next step
+  |
+  +-- SideQuest conversation(s)
+        +-- Separate message history
+        +-- Focused exploration
+        +-- Structured learning summary
+                    |
+                    v
+          Mission memory / Main AI context
+Context-transfer flow
+1. The user explores a topic in a SideQuest.
+2. The user invokes Return to Mission.
+3. The backend synthesizes a structured learning summary.
+4. The summary is stored as SideQuest memory, and relevant decisions
+   are merged into mission memory.
+5. On a subsequent Main AI turn, relevant summaries and mission memory
+   can be included in the prompt.
+6. The original SideQuest transcript remains separate from the Main
+   conversation history.
+The backend limits injected completed SideQuest summaries and tracks
+incorporation to avoid repeatedly adding the same summary to the prompt.
+Current features
+- Persistent Main AI and SideQuest conversations.
+- Mission creation and retrieval.
+- SideQuests linked to a mission.
+- Structured summaries for returning from a SideQuest to a mission.
+- Mission memory for summary, progress, decisions, blockers, and next
+  step.
+- SQLite persistence using better-sqlite3.
+- A sliding recent-message window for model prompts while retaining
+  full history in the database.
+- Separate Main AI and SideQuest message histories and system prompts.
+- Request validation, health/status endpoints, and failure handling.
+- Automated backend tests using Vitest.
+Tech stack
+  Layer            Technology
+  Frontend         React, TypeScript, Vite, Tailwind CSS
+  Frontend state   Zustand
+  Backend          Node.js, Express, TypeScript
+  Database         SQLite with better-sqlite3
+  AI integration   Google GenAI SDK
+  Testing          Vitest
+Repository structure
 ThreadBack/
-├── frontend/                 # React + TypeScript + Vite + TailwindCSS workspace
+├── frontend/
 │   ├── src/
-│   │   ├── api/              # Typed backend REST API client
-│   │   ├── components/       # UI Canvas, Drawers, Modals, Navbar, Sidebar
-│   │   ├── store/            # Zustand state store with SQLite synchronization
-│   │   ├── types/            # TypeScript data contracts & schemas
-│   │   └── App.tsx           # Main application entry point
-│   ├── .env                  # Frontend environment configuration (VITE_API_URL)
-│   ├── package.json          # Frontend dependencies & scripts
-│   └── vite.config.ts        # Vite configuration
-├── backend/                  # Dedicated Express + TypeScript service
-│   ├── src/                  # Controllers, services, routes, db repositories
-│   ├── data/                 # SQLite database storage (sidequest.db)
-│   ├── tests/                # Automated Vitest test suites (10 test files, 96 tests)
-│   └── package.json          # Backend package definition & dependencies
-├── package.json              # Root workspace management & delegation scripts
-└── README.md                 # Full application documentation
-```
-
----
-
-## Quickstart
-
-### Running Both Frontend and Backend
-
-1. **Start the Backend API Server (Port 4000):**
-```bash
-npm run dev:backend
-# or: cd backend && npm run dev
-```
-
-2. **Start the Frontend Vite Dev Server (Port 5173):**
-```bash
-npm run dev:frontend
-# or: cd frontend && npm run dev
-```
-
-Open `http://localhost:5173` in your browser.
-
-### Full Build & Validation Commands
-```bash
-# Build both frontend and backend for production
-npm run build
-
-# Run all backend unit and integration tests (96 tests)
-npm test
-
-# Typecheck both backend and frontend TypeScript
-npm run typecheck
-```
-
----
-
-## Environment Configuration
-
-### Backend (`backend/.env` or root `.env`)
-- `PORT=4000`: Backend HTTP listening port.
-- `GEMINI_API_KEY`: Google GenAI API key for hosted Gemma inference (kept strictly on backend; never exposed to browser).
-- `GEMMA_MODEL=gemma-4-26b-a4b-it`: Gemma model identifier for inference.
-- `CORS_ORIGIN=http://localhost:5173,http://localhost:3000`: Allowed frontend development origins.
-
-### Frontend (`frontend/.env`)
-- `VITE_API_URL=http://localhost:4000/api`: Backend REST API endpoint.
-
----
-
-## Backend Features & Architecture
-
-## 1. Features & Capabilities
-
-- **Return to Mission & Context Transfer (Phase 4)**:
-  - `POST /api/conversations/:id/return-to-mission`: Synthesizes a structured technical learning summary from a SideQuest transcript using Gemma, stores it in `sidequest_memories`, merges decisions into `mission_memories`, and prepares it for context transfer.
-  - **Context Sharing without History Pollution**: Transfers concise, structured SideQuest learnings (`[RELEVANT SIDEQUEST LEARNINGS]`) into the Main AI system context on the subsequent turn, while keeping raw message histories strictly segregated.
-  - **Bounded & Deduplicated Context**: Bounded context injection (at most 2 most recent completed summaries) and automated incorporation tracking (`is_incorporated`) prevents bloating prompts or repeatedly injecting identical summary blocks across subsequent turns.
-- **SQLite Database Persistence (Phase 3)**: High-performance, zero-external-dependency local database powered by `better-sqlite3` stored at `data/sidequest.db`.
-- **Atomic Mission & Conversation Management**:
-  - `POST /api/missions`: Atomically creates a mission and its primary main conversation.
-  - `GET /api/missions`: Lists recent missions.
-  - `GET /api/missions/:id`: Retrieves a mission together with all its conversations.
-  - `POST /api/missions/:id/sidequests`: Creates a dedicated SideQuest linked to an existing mission.
-  - `GET /api/conversations/:id/messages`: Retrieves complete conversation history in chronological order.
-- **Persistent AI Conversation Mode**:
-  - `POST /api/ai/chat`: Continues a persistent Main conversation by passing `conversationId` and `message`. Authoritative history is loaded from SQLite.
-  - `POST /api/ai/sidequest/chat`: Continues a persistent SideQuest conversation by passing `conversationId` and `message`.
-- **Backward-Compatible Stateless AI Mode**: Existing clients can continue sending stateless payloads with `missionObjective` and `messages`.
-- **Sliding Context Window**: Gemma requests receive a recent-turn window (default 30 messages) to preserve prompt token efficiency while keeping full history in SQLite.
-- **Strict History Isolation**: Main AI and SideQuest AI histories and system prompts remain strictly segregated.
-- **Failure Resilience**: If AI generation fails, no fabricated assistant responses or invalid summaries are persisted, and orphaned user messages are rolled back cleanly.
-- **Real Hosted Inference**: Direct integration with Google GenAI using official SDK methods (`ai.models.generateContent`).
-- **Health & Status Diagnostics**: Lightweight health check (`/api/health`) and configuration status (`/api/ai/status`).
-
----
-
-## 2. End-to-End User Workflow
-
-```
-1. User chats with Main AI
-   (POST /api/ai/chat with conversationId)
-   └─ Main AI assists with mission objective.
-       │
-2. User starts & explores a SideQuest
-   (POST /api/missions/:id/sidequests -> POST /api/ai/sidequest/chat)
-   └─ SideQuest AI focuses exclusively on the subtopic.
-       │
-3. User completes exploration & calls Return to Mission
-   (POST /api/conversations/:sidequestId/return-to-mission)
-   └─ Gemma synthesizes structured learning summary.
-   └─ Saved to sidequest_memories; decisions merged into mission_memories.
-       │
-4. Main AI continues the mission with transferred context
-   (POST /api/ai/chat with mainConversationId)
-   └─ Main AI prompt receives [RELEVANT SIDEQUEST LEARNINGS] and [MISSION MEMORY].
-   └─ Raw SideQuest transcript is NOT merged into Main AI message rows.
-   └─ Summary marked incorporated; subsequent turns avoid duplicate summary injection.
-```
-
----
-
-## 3. Database Choice & Architecture
-
-### Library: `better-sqlite3`
-- **Synchronous Execution**: Eliminates async overhead and event loop delays for local disk operations.
-- **Type-safe & Stable**: Robust TypeScript definitions and actively maintained.
-- **Full Foreign Key Support**: SQLite foreign keys enforced via `PRAGMA foreign_keys = ON`.
-- **WAL Mode & Concurrency**: Configured with `PRAGMA journal_mode = WAL` and `PRAGMA busy_timeout = 5000` to prevent database locks.
-- **Automatic Directory & Schema Initialization**: The `data/` directory is created automatically on startup, and the schema is applied idempotently (`CREATE TABLE IF NOT EXISTS`, idempotent column migrations).
-
-### Local Database Path
-- **File path**: `data/sidequest.db` (relative to the project root).
-- **Git-ignored**: `data/` and all SQLite database, journal, WAL, and shared-memory files (`*.db`, `*.db-journal`, `*.db-wal`, `*.db-shm`) are excluded from Git in `.gitignore`.
-
----
-
-## 4. Database Schema
-
-```
-missions (1) ────< conversations (1..*)
-                      │
-                      ├── type = 'main' (exactly 1 per mission)
-                      └── type = 'sidequest' (0..* per mission)
-                      │
-                      ├──< messages (1..*)
-                      │
-                      └──< sidequest_memories (0..1 per sidequest conversation)
-
-missions (1) ────< mission_memories (0..1 per mission)
-```
-
-### 1. `missions`
-| Column | Type | Constraints | Description |
-| :--- | :--- | :--- | :--- |
-| `id` | `TEXT` | `PRIMARY KEY` | Mission UUID. |
-| `objective` | `TEXT` | `NOT NULL` | The user's primary goal. |
-| `status` | `TEXT` | `NOT NULL DEFAULT 'active'` | Mission status (`active`, `completed`, `archived`). |
-| `created_at` | `TEXT` | `NOT NULL` | ISO 8601 creation timestamp. |
-| `updated_at` | `TEXT` | `NOT NULL` | ISO 8601 update timestamp. |
-
-### 2. `conversations`
-| Column | Type | Constraints | Description |
-| :--- | :--- | :--- | :--- |
-| `id` | `TEXT` | `PRIMARY KEY` | Conversation UUID. |
-| `mission_id` | `TEXT` | `NOT NULL REFERENCES missions(id) ON DELETE CASCADE` | Associated mission ID. |
-| `type` | `TEXT` | `NOT NULL CHECK(type IN ('main', 'sidequest'))` | Conversation type. |
-| `topic` | `TEXT` | `NULL` | SideQuest topic name (NULL for main). |
-| `created_at` | `TEXT` | `NOT NULL` | ISO 8601 creation timestamp. |
-| `updated_at` | `TEXT` | `NOT NULL` | ISO 8601 update timestamp. |
-
-### 3. `messages`
-| Column | Type | Constraints | Description |
-| :--- | :--- | :--- | :--- |
-| `id` | `TEXT` | `PRIMARY KEY` | Message UUID. |
-| `conversation_id`| `TEXT` | `NOT NULL REFERENCES conversations(id) ON DELETE CASCADE` | Associated conversation ID. |
-| `role` | `TEXT` | `NOT NULL CHECK(role IN ('user', 'assistant'))` | Message role. |
-| `content` | `TEXT` | `NOT NULL` | Exact raw message text. |
-| `created_at` | `TEXT` | `NOT NULL` | ISO 8601 creation timestamp. |
-
-### 4. `mission_memories`
-| Column | Type | Constraints | Description |
-| :--- | :--- | :--- | :--- |
-| `id` | `TEXT` | `PRIMARY KEY` | Memory UUID. |
-| `mission_id` | `TEXT` | `NOT NULL UNIQUE REFERENCES missions(id) ON DELETE CASCADE` | Associated mission ID (1:1). |
-| `summary` | `TEXT` | `NOT NULL DEFAULT ''` | High-level mission summary. |
-| `progress` | `TEXT` | `NOT NULL DEFAULT ''` | Progress description or metric. |
-| `decisions` | `TEXT` | `NOT NULL DEFAULT '[]'` | JSON array of key architectural decisions. |
-| `blockers` | `TEXT` | `NOT NULL DEFAULT '[]'` | JSON array of active blockers. |
-| `next_step` | `TEXT` | `NOT NULL DEFAULT ''` | Immediate next milestone. |
-| `updated_at` | `TEXT` | `NOT NULL` | ISO 8601 update timestamp. |
-
-### 5. `sidequest_memories`
-| Column | Type | Constraints | Description |
-| :--- | :--- | :--- | :--- |
-| `id` | `TEXT` | `PRIMARY KEY` | Memory UUID. |
-| `conversation_id`| `TEXT` | `NOT NULL UNIQUE REFERENCES conversations(id) ON DELETE CASCADE` | Associated SideQuest conversation ID (1:1). |
-| `learning_summary`| `TEXT` | `NOT NULL DEFAULT ''` | Serialized structured `SideQuestLearningSummary` JSON. |
-| `unresolved_questions` | `TEXT` | `NOT NULL DEFAULT '[]'` | JSON array of pending open questions. |
-| `is_incorporated`| `INTEGER`| `NOT NULL DEFAULT 0` | Flag (0 or 1) tracking context transfer to Main AI. |
-| `updated_at` | `TEXT` | `NOT NULL` | ISO 8601 update timestamp. |
-
----
-
-## 5. Prerequisites & Installation
-
-- **Node.js**: v18.0.0 or higher
-- **npm**: v9.0.0 or higher
-- **Google Gemini API Key**: An active API key with access to Gemini API models.
-
-```bash
+│   │   ├── api/           # Typed backend REST API client
+│   │   ├── components/    # UI components
+│   │   ├── store/         # Zustand state and synchronization
+│   │   ├── types/         # TypeScript contracts and schemas
+│   │   └── App.tsx        # Application entry point
+│   ├── package.json
+│   └── vite.config.ts
+├── backend/
+│   ├── src/               # Routes, controllers, services, repositories
+│   ├── data/              # Local SQLite database (created at runtime)
+│   ├── tests/             # Vitest suites
+│   └── package.json
+├── package.json           # Root scripts and workspace commands
+└── README.md
+Getting started
+Prerequisites
+- Node.js 18 or later
+- npm 9 or later
+- A Google GenAI API key with access to the configured model
+1. Install dependencies
+From the repository root:
 npm install
-cp .env.example .env
-```
-
-Ensure `GEMINI_API_KEY` is set in `.env`:
-```env
+If the repository uses separate package manifests and dependencies are
+not installed by the root command, install them in the relevant
+frontend/ and backend/ directories as needed.
+2. Configure environment variables
+Configure the backend environment in the location expected by the
+backend configuration (for example, backend/.env or the root .env,
+depending on the current setup):
 PORT=4000
-GEMINI_API_KEY=your_actual_key_here
+GEMINI_API_KEY=your_actual_api_key
 GEMMA_MODEL=gemma-4-26b-a4b-it
-CORS_ORIGIN=http://localhost:3000
-```
-
----
-
-## 6. Running the Application
-
-### Development Mode (with hot-reload)
-```bash
-npm run dev
-```
-
-### Production Build & Start
-```bash
+CORS_ORIGIN=http://localhost:5173,http://localhost:3000
+Configure the frontend in frontend/.env:
+VITE_API_URL=http://localhost:4000/api
+Do not commit real API keys. Keep provider credentials on the backend;
+variables prefixed with VITE_ are exposed to the browser.
+3. Run the application
+Start the backend API:
+npm run dev:backend
+Start the frontend in another terminal:
+npm run dev:frontend
+Open http://localhost:5173.
+If the root scripts differ in your checkout, use the scripts defined in
+the root and package-level package.json files.
+4. Build and validate
 npm run build
-npm start
-```
-
-### Type Checking & Test Suite
-```bash
 npm run typecheck
 npm test
-```
-
-### Live Phase 4 Verification Script
-```bash
+The existing project documentation reports 96 backend tests across 10
+test files. Run the test command in your checkout to verify the current
+result.
+A Phase 4 verification script is also documented:
 npx tsx scripts/verify-phase4.ts
-```
-
----
-
-## 7. API Endpoints
-
-### Return to Mission & Context Sharing
-
-#### `POST /api/conversations/:id/return-to-mission`
-Synthesizes the SideQuest into a structured learning summary and prepares it for context transfer to the Main AI.
-
-- **URL Parameter**: `:id` (UUID of the SideQuest conversation).
-- **Success Response (`200 OK`)**:
-  ```json
-  {
-    "summary": {
-      "topic": "JWT Authentication Middleware in Go",
-      "keyLearnings": [
-        "Middleware in Go uses the 'Wrapper' pattern: func(http.Handler) http.Handler.",
-        "The Factory Signature pattern allows safe configuration injection.",
-        "Request context (r.WithContext) passes user identity to downstream handlers."
-      ],
-      "decisions": [
-        "Use Factory Signature pattern for middleware.",
-        "Utilize 'github.com/golang-jwt/jwt/v5' library."
-      ],
-      "usefulExamples": [
-        "func AuthMiddleware(secret []byte) func(http.Handler) http.Handler"
-      ],
-      "unresolvedQuestions": [],
-      "missionRelevance": "Provides the authentication layer for securing CRUD API routes."
-    },
-    "missionId": "21bcc7f6-99d1-491b-bcb5-a12dbf2460f9",
-    "mainConversationId": "15c58f23-3b88-414b-aba1-664898a30c9d",
-    "sideQuestConversationId": "034722a0-eaa4-4d17-9539-9199928a5eba"
-  }
-  ```
-
----
-
-### Main AI Chat
-
-#### `POST /api/ai/chat`
-Continues the main mission conversation. Automatically includes relevant SideQuest learnings in prompt context without mutating message history.
-
-- **Request Body (Persistent Mode)**:
-  ```json
-  {
-    "conversationId": "15c58f23-3b88-414b-aba1-664898a30c9d",
-    "message": "Now that we decided on JWT middleware, let's wire it up to our protected routes."
-  }
-  ```
-- **Response (`200 OK`)**:
-  ```json
-  {
-    "reply": "To wire up authentication, integrate the JWT Middleware (which you've already designed) into your Router...",
-    "conversationId": "15c58f23-3b88-414b-aba1-664898a30c9d",
-    "missionId": "21bcc7f6-99d1-491b-bcb5-a12dbf2460f9"
-  }
-  ```
-
----
-
-### SideQuest AI Chat
-
-#### `POST /api/ai/sidequest/chat`
-Explores an unfamiliar technical concept in an isolated conversation.
-
-- **Request Body (Persistent Mode)**:
-  ```json
-  {
-    "conversationId": "034722a0-eaa4-4d17-9539-9199928a5eba",
-    "message": "Explain how to implement a JWT authentication middleware in Go."
-  }
-  ```
-
----
-
-### Mission & Conversation Management
-
-- `POST /api/missions`: Creates mission and main conversation.
-- `GET /api/missions`: Lists recent missions.
-- `GET /api/missions/:id`: Retrieves mission with its main and sidequest conversations.
-- `POST /api/missions/:id/sidequests`: Creates a SideQuest conversation linked to a mission.
-- `GET /api/conversations/:id/messages`: Retrieves chronological message history.
-
----
-
-## 8. Automated Test Suite
-
-Vitest executes **96 automated tests** across 10 test suites:
-
-- `tests/return-to-mission.test.ts`: Synthesis generation, empty/insufficient history fallback, invalid IDs, provider failure guard, decision merging.
-- `tests/context-sharing.test.ts`: Context transfer into Main AI, strict history isolation, deduplication across turns, bounded context limits, HTTP routes.
-- `tests/db.test.ts`: Atomic transactions, uniqueness constraints, foreign-key enforcement, sliding context window, reconnection persistence.
-- `tests/mission.routes.test.ts`: REST endpoints for missions, sidequests, and chronological message retrieval.
-- `tests/main-ai.service.test.ts`: Main AI orchestration, persistent chat turns, provider failure rollback, ID mismatch validation.
-- `tests/sidequest.service.test.ts`: SideQuest prompt injection, persistent chat turns, provider failure rollback, history isolation.
-- `tests/api.routes.test.ts`: HTTP status codes, health checks, route validation, error envelopes.
-- `tests/sidequest.routes.test.ts`: SideQuest route validation, 404/400 handling.
-- `tests/chat.schema.test.ts`: Main AI schema validation for stateless and persistent payloads.
-- `tests/sidequest.schema.test.ts`: SideQuest schema validation for stateless and persistent payloads.
-
-Run tests:
-```bash
-npm test
-```
+API overview
+The following endpoints are documented by the current backend:
+  Method                  Endpoint                                     Purpose
+  POST                  /api/missions                              Create a mission and
+                                                                       its Main conversation
+  GET                   /api/missions                              List recent missions
+  GET                   /api/missions/:id                          Retrieve a mission and
+                                                                       its conversations
+  POST                  /api/missions/:id/sidequests               Create a SideQuest
+                                                                       linked to a mission
+  GET                   /api/conversations/:id/messages            Retrieve chronological
+                                                                       conversation messages
+  POST                  /api/ai/chat                               Continue the Main AI
+                                                                       conversation
+  POST                  /api/ai/sidequest/chat                     Continue a SideQuest
+                                                                       conversation
+  POST                  /api/conversations/:id/return-to-mission   Summarize a SideQuest
+                                                                       and prepare relevant
+                                                                       context for the mission
+  GET                   /api/health                                Check backend health
+  GET                   /api/ai/status                             Inspect AI
+                                                                   configuration status
+Example: Continue the Main AI conversation
+{
+  "conversationId": "your-main-conversation-id",
+  "message": "Use the authentication approach we agreed on and continue with the protected routes."
+}
+Example: Continue a SideQuest
+{
+  "conversationId": "your-sidequest-conversation-id",
+  "message": "Explain how JWT middleware works and compare the implementation options."
+}
+Example: Return to the mission
+POST /api/conversations/:id/return-to-mission
+The backend creates a structured summary of the SideQuest and makes
+relevant findings available to the mission. Refer to the route
+implementation and tests for the exact response schema.
+Data model
+The documented SQLite schema contains these core entities:
+- missions --- objective, status, and timestamps.
+- conversations --- conversation ID, associated mission, type
+  (main or sidequest), topic, and timestamps.
+- messages --- raw messages associated with a conversation.
+- mission_memories --- mission summary, progress, decisions,
+  blockers, and next step.
+- sidequest_memories --- structured SideQuest learning summary,
+  unresolved questions, and incorporation status.
+A mission has one Main conversation and can have multiple SideQuest
+conversations. Memory is stored separately from raw message history so
+that useful context can be retrieved without merging transcripts.
+Roadmap direction
+The product direction is to expand selective context transfer into a
+robust mission and multi-agent context system:
+- Personal agents: Give each participant an agent that can reason
+  about their own perspective.
+- Shared decision layer: Send selected decisions and supporting
+  evidence to the Main AI.
+- Decision provenance: Track the author, rationale, status, and
+  timestamp of each proposal or decision.
+- Conflict handling: Surface disagreements and unresolved
+  questions instead of silently choosing a winner.
+- Mission relevance filtering: Keep unrelated conversation content
+  out of mission memory.
+- Permission-aware sharing: Let participants control which
+  personal context can be shared with the group.
+- Mission memory maintenance: Update decisions, progress,
+  blockers, and next steps as the project evolves.
+These are product goals, not a claim that every capability is already
+implemented.
+Contributing
+Contributions are welcome. Before submitting a change:
+1. Keep Main and SideQuest histories isolated unless a deliberate
+   context-transfer operation is being changed.
+2. Preserve the distinction between raw conversation messages and
+   structured mission memory.
+3. Add or update tests for context transfer, deduplication, validation,
+   and failure cases.
+4. Run type checking and tests.
+5. Never commit API keys, local databases, or other secrets.
