@@ -387,4 +387,6 @@ Contributions are welcome.
 4. Run type checking and automated tests before submitting changes.
 5. Never commit API keys, local databases, or other secrets.
 
+## License
 
+ThreadBack is licensed under the [MIT License](LICENSE).
