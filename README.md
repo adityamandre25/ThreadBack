@@ -387,8 +387,4 @@ Contributions are welcome.
 4. Run type checking and automated tests before submitting changes.
 5. Never commit API keys, local databases, or other secrets.
 
----
 
-## License
-
-No license is currently specified. Add a `LICENSE` file before distributing ThreadBack as an open-source project.
